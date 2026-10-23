@@ -10,7 +10,11 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
-## [1.0.1] — 2026-10-23
+## [1.0.2] — 2026-10-23
+
+Identical to 1.0.1. 1.0.1 was stuck in npm's staged-publishing pipeline while its
+registry state still reported `1.0.0` as latest, so it was republished under a new
+version to complete the install. Use 1.0.2.
 
 ### Fixed
 
@@ -20,6 +24,11 @@ menu enhancements without changing the package name again.
   failed to activate with `cannot get property "openWorkspaceFolder" without inject`.
 - The Host test suite now mounts the plugin behind a proxy that mimics that Cordis behaviour,
   so the regression cannot come back unnoticed.
+
+## [1.0.1] — 2026-10-23
+
+Superseded by 1.0.2 (same content); kept only because npm will not unpublish a version that
+was staged and released.
 
 ## [1.0.0] — 2026-10-23
 
