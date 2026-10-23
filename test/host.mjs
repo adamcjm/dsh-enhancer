@@ -100,12 +100,11 @@ function mount(options = {}) {
   const warnings = []
   const opened = []
   const registry = options.registry ?? null
-  const ctx = {
+  const baseCtx = {
     logger: { warn: (message) => warnings.push(String(message)) },
     get(name) {
       return name === 'workspaceRegistry' ? registry : null
     },
-    openWorkspaceFolder: options.openWorkspaceFolder ?? (async (workspacePath) => { opened.push(workspacePath) }),
     webServer: {
       register(route) {
         routes.push(route)
@@ -123,6 +122,21 @@ function mount(options = {}) {
       return () => { if (typeof dispose === 'function') dispose() }
     },
   }
+  if (options.injectOpener !== false) {
+    baseCtx.openWorkspaceFolder = options.openWorkspaceFolder ?? (async (workspacePath) => { opened.push(workspacePath) })
+  }
+  /**
+   * A real Cordis context is a proxy that throws when a plugin reads a service
+   * it was not injected with; the proxy mirrors that so such a read fails here
+   * instead of only in a live Host.
+   */
+  const ctx = new Proxy(baseCtx, {
+    get(target, property) {
+      if (property in target) return Reflect.get(target, property)
+      if (typeof property === 'symbol') return undefined
+      throw new Error(`cannot get property "${String(property)}" without inject`)
+    },
+  })
   apply(ctx)
   const route = routes[0]
   return {
@@ -432,7 +446,19 @@ try {
   /* ------------------------------------------------------------------ *
    * Upgrade from @adamcjm/dsh-workspace-visibility                     *
    * ------------------------------------------------------------------ */
-  // M. The previous package's state file is adopted exactly once.
+  // M. A context that never injected the opener still mounts. Cordis proxies
+  //    throw on a property read the plugin did not inject, so the fallback must
+  //    be guarded instead of crashing the whole plugin.
+  {
+    const dir = await caseDir('case-no-opener')
+    process.env.DSH_HOME = dir
+    const instance = mount({ registry: knownRegistry([]), injectOpener: false })
+    check('mounting without an injected opener falls back instead of throwing',
+      instance.route !== undefined && instance.route.path === '/dsh-enhancer')
+    instance.dispose()
+  }
+
+  // N. The previous package's state file is adopted exactly once.
   {
     const dir = await caseDir('case-m')
     await writeFile(join(dir, 'storages', 'workspace-visibility.json'), JSON.stringify({

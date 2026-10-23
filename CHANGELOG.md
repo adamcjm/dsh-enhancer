@@ -10,6 +10,17 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-23
+
+### Fixed
+
+- The Host half no longer fails activation on a real Cordis context: a context proxy throws
+  when a plugin reads a service it was not injected with, so reading the `openWorkspaceFolder`
+  test seam is now guarded by `try`/`catch` and falls back to the platform launcher. 1.0.0
+  failed to activate with `cannot get property "openWorkspaceFolder" without inject`.
+- The Host test suite now mounts the plugin behind a proxy that mimics that Cordis behaviour,
+  so the regression cannot come back unnoticed.
+
 ## [1.0.0] — 2026-10-23
 
 ### Added
