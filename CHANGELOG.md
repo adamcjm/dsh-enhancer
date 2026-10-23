@@ -10,6 +10,14 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.3] — 2026-10-23
+
+### Changed
+
+- Trash dialog copy now talks about the **session**, not its files: "会话不会立即删除" /
+  "会话会从回收站彻底移除" / "回收站里的所有会话". The underlying behaviour is unchanged; the
+  old wording made it read like files were being deleted immediately.
+
 ## [1.1.2] — 2026-10-23
 
 ### Fixed
