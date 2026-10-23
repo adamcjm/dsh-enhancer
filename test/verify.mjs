@@ -720,7 +720,10 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   const bridge = loadBundle({ host })
   const test = bridge.exports.__test
   const store = test.createTrashStore()
-  const ui = test.createTrashController(store, () => translate)
+  const sessionRefreshes = { count: 0 }
+  const ui = test.createTrashController(store, () => translate, {
+    refreshSessions: () => { sessionRefreshes.count += 1 },
+  })
 
   check('the trash store starts empty', store.getSnapshot().entries.length === 0
     && store.getSnapshot().dialog === null)
@@ -784,11 +787,13 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   ui.selectAll(['e1'])
   equal('selectAll selects every root', store.getSnapshot().selected, ['e1'])
 
+  const refreshesBeforeRestore = sessionRefreshes.count
   ui.restoreSelected()
   await sleep(20)
   equal('restore sends the selected entry ids',
     host.trash.calls.filter((call) => call.startsWith('restore:')), ['restore:e1'])
   equal('restore clears the selection', store.getSnapshot().selected, [])
+  equal('restore asks the sessions model to re-pull', sessionRefreshes.count, refreshesBeforeRestore + 1)
 
   ui.toggleSelect('e1')
   ui.askPurge()

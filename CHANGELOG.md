@@ -10,6 +10,18 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-10-23
+
+### Fixed
+
+- **Restoring a session now makes it reappear** in its workspace and in search. Moving the files
+  back was not enough: the client's session snapshot had already dropped the row, and nothing
+  re-pulled `session/list`, so the restored session stayed invisible. Restore (and delete) now
+  call the client sessions service's `refreshList()`, which re-reads the Host and brings the
+  session back into every list-driven surface.
+- Sessions restored before this version show up after the next page load or session-list
+  refresh; their files were already back on disk.
+
 ## [1.2.1] — 2026-10-23
 
 ### Fixed
