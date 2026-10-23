@@ -10,6 +10,18 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.6] — 2026-10-23
+
+### Fixed
+
+- Purging one entry or emptying the trash no longer makes the deleted sessions reappear under
+  **Ungrouped**. Both actions only refreshed the trash store; once the entries dropped, the
+  `sessions.list` projection lifted its filter and exposed the stale rows that were still in
+  the client snapshot. Both actions now re-pull `session/list` **first**, and only then drop the
+  entries, so the filter is still in place while the snapshot catches up.
+- Restore goes through the same helper: re-pull with the filter in place, then lift it. No more
+  one-frame flash.
+
 ## [1.2.5] — 2026-10-23
 
 ### Fixed
