@@ -10,6 +10,15 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-10-23
+
+### Fixed
+
+- The permanent-delete and empty-trash confirmation dialogs now appear **above** the trash
+  panel instead of behind it. Both are occupants of `shell.overlay`, and the panel's order was
+  higher, so its backdrop covered the confirmation. The dialog now renders after the panel
+  (`order` 80 vs 60) and carries a dedicated higher z-index as a second guard.
+
 ## [1.2.3] — 2026-10-23
 
 ### Fixed
