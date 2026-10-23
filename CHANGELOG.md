@@ -10,6 +10,15 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-10-23
+
+### Fixed
+
+- The sidebar trash entry now matches the host's own footer buttons: a fixed 28×28 icon button
+  with the count as an absolutely positioned badge. The previous version used an inline count,
+  which made the button taller/wider than the neighbouring mobile-access button and pushed it
+  out of line.
+
 ## [1.2.0] — 2026-10-23
 
 ### Added
