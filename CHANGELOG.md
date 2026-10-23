@@ -10,6 +10,19 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-10-23
+
+### Fixed
+
+- A trashed session no longer flashes under **Ungrouped** before disappearing.
+  `detachSession` used to run *before* the files moved, so the sidebar re-read its session
+  list while the session still existed, painted it under Ungrouped, and never received a
+  second push that would remove it. The files now move first; the detach (which is what makes
+  the sidebar re-read) happens after, so the row simply disappears.
+- Deleting an **ungrouped** session reloads the page once after the move. Such a session has
+  no workspace row to detach, so no push reaches the sidebar and its row would otherwise stay
+  as a ghost that answers "session not found" on a second attempt.
+
 ## [1.1.3] — 2026-10-23
 
 ### Changed

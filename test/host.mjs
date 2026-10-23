@@ -202,7 +202,7 @@ function makeSessionServices(rows) {
 }
 
 /** Fake workspace registry recording every mutation the plugin performs. */
-function makeWorkspaceRegistry(workspaces) {
+function makeWorkspaceRegistry(workspaces, options = {}) {
   const calls = { detached: [], attached: [], unarchived: [], unpinned: [], resolved: [] }
   const byId = new Map()
   for (const source of workspaces) {
@@ -214,6 +214,7 @@ function makeWorkspaceRegistry(workspaces) {
       async detachSession(id) {
         calls.detached.push(id)
         workspace.sessionIds = workspace.sessionIds.filter((item) => item !== id)
+        if (typeof options.onDetach === 'function') await options.onDetach(id)
       },
       async attachSession(id) {
         calls.attached.push(id)
@@ -561,7 +562,11 @@ try {
     const sid = 'sess-trash-1'
     const made = await makeSession(dir, sid)
     const services = makeSessionServices([{ sessionId: sid, title: 'Demo talk', cwd: '/Users/adam/demo' }])
-    const reg = makeWorkspaceRegistry([{ id: 'ws-1', title: 'Demo', path: '/Users/adam/demo', sessionIds: [sid] }])
+    let fileStateAtDetach = null
+    const reg = makeWorkspaceRegistry(
+      [{ id: 'ws-1', title: 'Demo', path: '/Users/adam/demo', sessionIds: [sid] }],
+      { onDetach: async () => { fileStateAtDetach = await stat(made.dir).then(() => 'present', () => 'gone') } },
+    )
     const instance = mount({ registry: reg, ...services })
     const response = await call(instance.route, 'POST', '/trash/move', { sessionId: sid, displayTitle: 'Demo talk' })
     check('trash move answers 200', response.statusCode === 200, String(response.statusCode))
@@ -572,6 +577,7 @@ try {
     equal('registry received detach', reg.calls.detached, [sid])
     equal('registry received unarchive', reg.calls.unarchived, [sid])
     equal('registry received unpin', reg.calls.unpinned, [sid])
+    equal('the session file is moved before the registry detach', fileStateAtDetach, 'gone')
     check('session left the sessions tree', await stat(made.dir).then(() => false, () => true))
     check('session data is inside the trash entry',
       await stat(join(dir, 'trash', 'sessions', entry.entryId, 'data', 'session.v4.jsonl.zstd')).then(() => true, () => false))
