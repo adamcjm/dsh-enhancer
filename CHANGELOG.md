@@ -10,6 +10,14 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-10-23
+
+### Fixed
+
+- The trash dialog's overlay now declares `pointer-events: auto`. `shell.overlay` is a
+  click-through layer by contract, so without it the backdrop and its buttons never received
+  a click and the confirmation could not be used.
+
 ## [1.1.0] — 2026-10-23
 
 ### Added
