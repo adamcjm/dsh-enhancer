@@ -397,7 +397,7 @@ function equal(name, actual, expected) {
 const loaded = loadBundle()
 equal('loader entry id is the package name', loaded.entry.id, PACKAGE_NAME)
 check('factory publishes apply', typeof loaded.exports.apply === 'function')
-equal('inject waits for locale/workspaces/slots', loaded.exports.inject, ['locale', 'workspaces', 'slots'])
+equal('inject waits for locale/workspaces/sessions/slots', loaded.exports.inject, ['locale', 'workspaces', 'sessions', 'slots'])
 const t = loaded.exports.__test
 check('test seam is exported', t !== undefined && typeof t.filterProjection === 'function'
   && typeof t.installSync === 'function' && typeof t.normalizeRemoteState === 'function')
@@ -541,6 +541,11 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
     getSnapshot() { return raw },
     subscribe() { return () => {} },
   }
+  const sessionsRaw = { phase: 'ready', ids: ['s1'], byId: { s1: { sessionId: 's1' } } }
+  const sessionsModel = {
+    getSnapshot() { return sessionsRaw },
+    subscribe() { return () => {} },
+  }
   const effects = []
   const registrations = []
   const dictionaries = []
@@ -550,7 +555,11 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
       effects.push({ label, dispose })
       return () => { if (typeof dispose === 'function') dispose() }
     },
-    get(name) { return name === 'workspaces' ? { list: model } : null },
+    get(name) {
+      if (name === 'workspaces') return { list: model }
+      if (name === 'sessions') return { list: sessionsModel }
+      return null
+    },
     locale: {
       register(ns, dict) { dictionaries.push({ ns, dict }); return () => {} },
       bind(ns) {
@@ -820,6 +829,43 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   equal('relativeTimeText renders just now', test.relativeTimeText(translate, new Date().toISOString()), '刚刚')
   equal('relativeTimeText renders minutes',
     test.relativeTimeText(translate, new Date(Date.now() - 5 * 60 * 1000).toISOString()), '5 分钟前')
+}
+
+/* ------------------------------------------------------------------ *
+ * 10. Trash projection over sessions.list                             *
+ * ------------------------------------------------------------------ */
+{
+  const raw = {
+    phase: 'ready',
+    ids: ['s1', 's2', 's3'],
+    byId: { s1: { sessionId: 's1' }, s2: { sessionId: 's2' }, s3: { sessionId: 's3' } },
+  }
+  const listeners = []
+  const model = {
+    getSnapshot() { return raw },
+    subscribe(listener) { listeners.push(listener); return () => {} },
+  }
+  const trashStore = t.createTrashStore()
+  const dispose = t.installTrashProjection(
+    { get: (name) => (name === 'sessions' ? { list: model } : null) },
+    trashStore,
+    { warn() {} },
+  )
+  check('an empty trash returns the raw snapshot', model.getSnapshot() === raw)
+  trashStore.set({ entries: [{ entryId: 'e1', sessionId: 's2' }] })
+  const filtered = model.getSnapshot()
+  equal('a trashed session leaves the id list', filtered.ids, ['s1', 's3'])
+  equal('a trashed session leaves byId', Object.keys(filtered.byId), ['s1', 's3'])
+  check('the raw snapshot object is never mutated', raw.ids.length === 3 && Object.keys(raw.byId).length === 3)
+  check('the filtered snapshot is cached while unchanged', model.getSnapshot() === filtered)
+  let notified = 0
+  const off = model.subscribe(() => { notified += 1 })
+  trashStore.set({ entries: [] })
+  check('the trash store notifies model subscribers', notified === 1)
+  equal('clearing the trash restores the raw snapshot', model.getSnapshot(), raw)
+  off()
+  dispose()
+  check('dispose restores the original model', model.getSnapshot() === raw)
 }
 
 /* ------------------------------------------------------------------ *

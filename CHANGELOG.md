@@ -10,6 +10,20 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.5] — 2026-10-23
+
+### Fixed
+
+- A trashed session no longer lands under **Ungrouped**. The sidebar's session rows come from
+  the `sessions.list` client model, which is a *different* data source than the workspace
+  registry: `detachSession` re-groups rows but never reloads that list, so a trashed session
+  stayed visible with no group and dropped into Ungrouped. The plugin now wraps
+  `sessions.list` and filters out every session currently in the trash, so the row disappears
+  from every surface (workspace groups, Ungrouped, recents) as soon as the delete lands —
+  without a page reload.
+- `inject` now includes `sessions`; the ordering-only fix from 1.1.4 is retained but was not
+  sufficient on its own.
+
 ## [1.1.4] — 2026-10-23
 
 ### Fixed
