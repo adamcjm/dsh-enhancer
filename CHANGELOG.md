@@ -10,6 +10,18 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-10-23
+
+### Fixed
+
+- A session that was merely **opened** no longer blocks its own deletion. DSH keeps a view's
+  Agent alive for the whole view lifetime, and the Host's busy check treated that live Agent
+  as a running turn, so any session you had clicked on reported "is running, cannot delete".
+  The session controller's `running` flag is now authoritative; the live-Agent check is only
+  a fallback for the degraded case where controller rows are unavailable.
+- `POST /dsh-enhancer/trash/inspect` now reports `runningSource` (`controller` or `agent`) and
+  `loaded`, so this distinction is observable instead of guessed.
+
 ## [1.1.1] — 2026-10-23
 
 ### Fixed

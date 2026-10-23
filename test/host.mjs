@@ -595,6 +595,44 @@ try {
     instance.dispose()
   }
 
+  // U2. A loaded-but-idle session stays deletable: a live Agent alone is not a turn.
+  {
+    const dir = await caseDir('case-trash-idle')
+    process.env.DSH_HOME = dir
+    const sid = 'sess-idle'
+    const made = await makeSession(dir, sid)
+    const services = makeSessionServices([{ sessionId: sid, running: false, cwd: '/Users/adam/demo' }])
+    const instance = mount({
+      registry: makeWorkspaceRegistry([]),
+      ...services,
+      agents: { get: (id) => (id === sid ? { id } : undefined) },
+    })
+    const inspected = JSON.parse((await call(instance.route, 'POST', '/trash/inspect', { sessionId: sid })).body)
+    equal('a loaded idle session is not reported as running', inspected.running, false)
+    equal('the controller is the running source', inspected.runningSource, 'controller')
+    equal('the session is reported as loaded', inspected.loaded, true)
+    const response = await call(instance.route, 'POST', '/trash/move', { sessionId: sid })
+    check('a loaded idle session can be trashed', response.statusCode === 200, String(response.statusCode))
+    check('the idle session left the sessions tree', await stat(made.dir).then(() => false, () => true))
+    instance.dispose()
+  }
+
+  // U3. Without controller rows the live-agent check is the conservative fallback.
+  {
+    const dir = await caseDir('case-trash-no-controller')
+    process.env.DSH_HOME = dir
+    const sid = 'sess-no-controller'
+    await makeSession(dir, sid)
+    const instance = mount({
+      registry: makeWorkspaceRegistry([]),
+      agents: { get: (id) => (id === sid ? { id } : undefined) },
+    })
+    const inspected = JSON.parse((await call(instance.route, 'POST', '/trash/inspect', { sessionId: sid })).body)
+    equal('without controller rows a live agent is treated as running', inspected.running, true)
+    equal('the agent fallback is reported as the source', inspected.runningSource, 'agent')
+    instance.dispose()
+  }
+
   // V. Unlocatable session files fail closed.
   {
     const dir = await caseDir('case-trash-missing')
