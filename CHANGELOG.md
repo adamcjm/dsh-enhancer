@@ -10,6 +10,20 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.5] — 2026-10-23
+
+### Fixed
+
+- **Removed the page reload from the restore path.** 1.2.3 reloaded the page when a restored
+  session had not appeared within 900 ms; that reload can race the desktop web boot and abort
+  the plugin import (`web boot: 1 entry did not activate` / `import failed`), which leaves the
+  app on the crash screen. The plugin never calls `location.reload()` now.
+- Instead of reloading, restore waits for any in-flight `session/list` pull, retries the pull
+  once, and — when the row still has not landed — shows a dismissible notice in the trash panel
+  asking for a manual reload (`Cmd+R`).
+- `refreshSessions` now waits for an in-flight pull before requesting a new one, so a restore no
+  longer reuses a generation that was fetched before the trash list settled.
+
 ## [1.2.4] — 2026-10-23
 
 ### Fixed

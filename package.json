@@ -1,6 +1,6 @@
 {
   "name": "@adamcjm/dsh-enhancer",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Quality-of-life enhancements for the DSH workspace sidebar: hide workspaces and their sessions, reveal them from the view options, and open any workspace folder in Finder, Explorer or your file manager. Display-only: workspace, session and archive data are never modified.",
   "type": "module",
   "main": "lib/index.js",

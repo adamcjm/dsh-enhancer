@@ -848,6 +848,12 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
     JSON.stringify(panelOverlay).includes('dsh-enh-trash-modal'))
   const panelBody = test.TrashPanel({ ui: ui, t: translate })
   check('the trash panel renders the root entry', JSON.stringify(panelBody).includes('Alpha'))
+  store.set({ notice: 'noticeHidden' })
+  const panelWithNotice = test.TrashPanel({ ui: ui, t: translate })
+  check('the trash panel renders the restore notice',
+    JSON.stringify(panelWithNotice).includes('trash.noticeHidden'))
+  ui.dismissNotice()
+  check('dismissNotice clears the notice', store.getSnapshot().notice === '')
   const footerButton = test.TrashSidebarButton({ ui: ui, t: translate })
   check('the footer entry renders a pressed button', footerButton.type === 'button'
     && footerButton.props['aria-pressed'] === 'true'
