@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH Enhancer",
-    "description": "Quality-of-life enhancements for the DSH workspace menus: open a workspace's folder in Finder, Explorer or your file manager, and hide or restore workspaces in the sidebar. Display-only: workspace, session and archive data are never modified."
+    "description": "Quality-of-life enhancements for the DSH sidebar: open a workspace's folder in Finder, Explorer or your file manager, hide or restore workspaces, and move sessions to a trash you can restore from. Deleting a session only moves its files under $DSH_HOME/trash."
   }
 }

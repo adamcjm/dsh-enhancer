@@ -10,20 +10,23 @@ everyday operations the shipped workspace menus are missing. It is deliberately 
 after the *area* rather than one feature, so new menu enhancements can be added without
 renaming the package again.
 
-Today it ships three things:
+Today it ships four things:
 
 | Where | Entry | What it does |
 | --- | --- | --- |
 | Workspace row → "…" menu | **Open folder** | Opens the workspace's directory in Finder, Explorer or your file manager |
 | Workspace row → "…" menu | **Hide workspace** / **Unhide workspace** | Hides the workspace and every session it owns from the sidebar |
 | Sidebar → View options | **Show hidden workspaces (N)** | Reveals hidden workspaces again so they can be restored |
+| Session row → "…" menu | **Move to Trash** | Moves the session's files to `$DSH_HOME/trash`, restorable from Settings → Plugins → Trash |
 
-Display-only by design:
+Almost display-only by design:
 
-- no archive, unarchive, rename, move, pin or delete calls;
+- no archive, unarchive, rename, move or pin side effects beyond what a user action asks for;
 - no changes to workspace records, session logs or the archive set;
 - opening a folder is read-only: it launches the OS file manager and nothing else;
-- the only state written is one small Host file
+- moving a session to the trash never deletes it: the files are renamed into
+  `$DSH_HOME/trash/sessions/` and can be restored;
+- the only durable non-trash state is one small Host file
   (`$DSH_HOME/storages/dsh-enhancer.json`).
 
 ## Install
@@ -106,6 +109,38 @@ copy: it fetches the state once, then receives every change over an SSE stream
 `$DSH_HOME`) stay in sync without a refresh. Mutations travel as increments, so two clients
 hiding different workspaces cannot overwrite each other.
 
+### Move a session to the trash
+
+**Session row → "…" menu → Move to Trash.**
+
+- A **running** session is refused: the dialog says so and offers only Close. Stop the
+  session first.
+- A session with **child sessions** (sub-agents) asks what to do:
+  - **Delete only this session** — the parent leaves, the children stay in place as orphans
+    (their `parentSession` now points at a session that no longer exists);
+  - **Delete with N child sessions** — the parent and all of its children move together, and
+    restoring the parent restores them too.
+- A session whose files cannot be located is reported and **nothing is touched** — the plugin
+  fails closed rather than guessing a path.
+
+Files move to `$DSH_HOME/trash/sessions/<timestamp>_<sessionId>/data/`, beside a
+`manifest.json` that records the title, workspace, cwd, original relative path, size and the
+child entries created by the same deletion.
+
+**Restore from Settings → Plugins → Trash.** The tab lists every deleted session with its
+title, workspace, age, size and child count. Tick the entries you want, then:
+
+| Button | Scope | Confirmation |
+| --- | --- | --- |
+| **Restore (N)** | the ticked entries only | none |
+| **Delete permanently (N)** | the ticked entries only | yes, "cannot be recovered" |
+| **Empty trash (N)** | the whole trash, ignores the selection | yes, "empties everything" |
+
+Restoring a parent also restores the child entries created with it. Restored sessions are
+re-attached to their original workspace when it still exists, otherwise re-grouped by their
+cwd. `Empty trash` only removes `$DSH_HOME/trash/sessions/*` — it never touches DSH's own
+`sessions/` directory.
+
 ## How it works
 
 - **Hiding** never touches the DOM. The plugin wraps the `workspaces.list` client model
@@ -116,9 +151,18 @@ hiding different workspaces cannot overwrite each other.
 - **Menu entries** are DOM additions. The shipped Workspace row menu and View options menu
   are hardcoded arrays with no slot in DSH 0.2.1-rc, so the plugin appends entries that clone
   the shipped item's own classes. A `MutationObserver` finds the menu portal after it opens.
+  The session menu entry and the trash tab are **real slots**
+  (`sidebar.workspaces.session.menu.item`, `settings.plugins.tab`, `shell.overlay`), not DOM
+  injections.
 - **The Host half** owns the durable state and the `open-workspace` action. Opening is a
   detached `spawn` with `stdio: 'ignore'`, so the HTTP request resolves as soon as the
   launcher exists.
+- **Trashing** never edits DSH's storage directly. The Host first drops the durable
+  references through the public registry API (`detachSession`, `unarchiveSession`,
+  `unpinSession`), then renames the session directory into the trash and writes the
+  manifest. A session is located by matching the `<sessionId>` entry name inside
+  `$DSH_HOME/sessions/<group>/`, so a change in DSH's path encoding or a switch to a
+  single-file layout fails closed instead of deleting the wrong thing.
 
 ## Upgrading from `@adamcjm/dsh-workspace-visibility`
 

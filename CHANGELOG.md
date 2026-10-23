@@ -10,6 +10,37 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-23
+
+### Added
+
+- **Move to Trash** in every Session row's "…" menu. The session's files move to
+  `$DSH_HOME/trash/sessions/<stamp>_<sessionId>/data/` beside a `manifest.json`; nothing is
+  deleted.
+  - Running sessions are refused, with the reason shown in the dialog.
+  - Sessions with child sessions ask whether to cascade: "only this session" leaves the
+    children in place as orphans, "with N child sessions" moves them together.
+  - Unlocatable session files fail closed with an error instead of guessing a path.
+- **Settings → Plugins → Trash tab**: a multi-select list showing title, workspace, age, size
+  and child count. Restore (N) and Delete permanently (N) act on the ticked entries; Empty
+  trash (N) acts on the whole trash. Restoring a parent restores the child entries created
+  with it.
+- Host routes `GET /dsh-enhancer/trash`, `POST /trash/inspect`, `POST /trash/move`,
+  `POST /trash/restore`, `POST /trash/purge`, `POST /trash/empty`.
+- The session menu entry, the confirmation overlay and the trash tab are **real slots**
+  (`sidebar.workspaces.session.menu.item`, `shell.overlay`, `settings.plugins.tab`);
+  `inject` now includes `slots`.
+
+### Compatibility
+
+- Session location deliberately does not decode DSH's cwd directory encoding: it matches the
+  `<sessionId>` entry name inside `$DSH_HOME/sessions/<group>/`, also tolerates a single-file
+  shape, and fails closed on anything unexpected.
+- Trashing goes through the public registry API (`detachSession`, `unarchiveSession`,
+  `unpinSession`) before moving files, so the sidebar updates without pointing at nothing.
+- `sessions/` is never modified except by the rename in and out of the trash; emptying the
+  trash touches `$DSH_HOME/trash/sessions/*` only.
+
 ## [1.0.2] — 2026-10-23
 
 Identical to 1.0.1. 1.0.1 was stuck in npm's staged-publishing pipeline while its

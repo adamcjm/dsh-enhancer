@@ -21,7 +21,7 @@
  *
  * Run: node test/host.mjs
  */
-import { chmod, mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -103,7 +103,11 @@ function mount(options = {}) {
   const baseCtx = {
     logger: { warn: (message) => warnings.push(String(message)) },
     get(name) {
-      return name === 'workspaceRegistry' ? registry : null
+      if (name === 'workspaceRegistry') return registry
+      if (name === 'sessionPersistence') return options.sessionPersistence ?? null
+      if (name === 'sessionController') return options.sessionController ?? null
+      if (name === 'agents') return options.agents ?? null
+      return null
     },
     webServer: {
       register(route) {
@@ -157,6 +161,78 @@ async function call(route, method, path, body) {
   const res = makeRes()
   await route.handler(req, res)
   return res
+}
+
+/** Create `<home>/sessions/<group>/<sessionId>/` with a fake v4 log. */
+async function makeSession(home, sessionId, options = {}) {
+  const group = options.group ?? '--Users-adam-demo--'
+  const dir = join(home, 'sessions', group, sessionId)
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'session.v4.jsonl.zstd'), options.bytes ?? 'session-log-payload', 'utf8')
+  await writeFile(join(dir, 'session.lock'), '', 'utf8')
+  return { dir, group }
+}
+
+/** Fake sessionPersistence + sessionController over a fixed row set. */
+function makeSessionServices(rows) {
+  return {
+    sessionPersistence: {
+      async stat(id) {
+        const row = rows.find((item) => item.sessionId === id)
+        return row === undefined ? undefined : { header: { id, cwd: row.cwd } }
+      },
+      async list() {
+        return rows.map((row) => ({ header: { id: row.sessionId, cwd: row.cwd } }))
+      },
+    },
+    sessionController: {
+      async list() {
+        return {
+          items: rows.map((row) => ({
+            sessionId: row.sessionId,
+            running: row.running === true,
+            parentSessionId: row.parentSessionId,
+            cwd: row.cwd,
+            projections: row.title === undefined ? undefined : { values: { title: row.title } },
+          })),
+        }
+      },
+    },
+  }
+}
+
+/** Fake workspace registry recording every mutation the plugin performs. */
+function makeWorkspaceRegistry(workspaces) {
+  const calls = { detached: [], attached: [], unarchived: [], unpinned: [], resolved: [] }
+  const byId = new Map()
+  for (const source of workspaces) {
+    const workspace = {
+      id: source.id,
+      title: source.title ?? source.id,
+      path: source.path ?? '',
+      sessionIds: [...(source.sessionIds ?? [])],
+      async detachSession(id) {
+        calls.detached.push(id)
+        workspace.sessionIds = workspace.sessionIds.filter((item) => item !== id)
+      },
+      async attachSession(id) {
+        calls.attached.push(id)
+        if (!workspace.sessionIds.includes(id)) workspace.sessionIds.push(id)
+      },
+    }
+    byId.set(workspace.id, workspace)
+  }
+  return {
+    calls,
+    get(id) { return byId.get(id) },
+    list() { return Array.from(byId.values()) },
+    async unarchiveSession(id) { calls.unarchived.push(id) },
+    async unpinSession(id) { calls.unpinned.push(id) },
+    async resolveByPath(path) {
+      calls.resolved.push(path)
+      return Array.from(byId.values()).find((workspace) => workspace.path === path)
+    },
+  }
 }
 
 const home = await mkdtemp(join(tmpdir(), 'enh-host-'))
@@ -472,6 +548,133 @@ try {
     equal('the adopted state is written under the new name',
       JSON.parse(await readFile(stateAt(dir), 'utf8')).hidden, ['old-1', 'old-2'])
     check('the adoption is logged', instance.warnings.some((message) => message.includes('旧状态文件')))
+    instance.dispose()
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Session trash                                                       *
+   * ------------------------------------------------------------------ */
+  // T. Move a session into the trash: registry cleaned, files relocated.
+  {
+    const dir = await caseDir('case-trash')
+    process.env.DSH_HOME = dir
+    const sid = 'sess-trash-1'
+    const made = await makeSession(dir, sid)
+    const services = makeSessionServices([{ sessionId: sid, title: 'Demo talk', cwd: '/Users/adam/demo' }])
+    const reg = makeWorkspaceRegistry([{ id: 'ws-1', title: 'Demo', path: '/Users/adam/demo', sessionIds: [sid] }])
+    const instance = mount({ registry: reg, ...services })
+    const response = await call(instance.route, 'POST', '/trash/move', { sessionId: sid, displayTitle: 'Demo talk' })
+    check('trash move answers 200', response.statusCode === 200, String(response.statusCode))
+    const entry = JSON.parse(response.body).entry
+    equal('trash entry keeps the session id', entry.sessionId, sid)
+    equal('trash entry keeps the title', entry.title, 'Demo talk')
+    equal('trash entry records the workspace', entry.workspaceId, 'ws-1')
+    equal('registry received detach', reg.calls.detached, [sid])
+    equal('registry received unarchive', reg.calls.unarchived, [sid])
+    equal('registry received unpin', reg.calls.unpinned, [sid])
+    check('session left the sessions tree', await stat(made.dir).then(() => false, () => true))
+    check('session data is inside the trash entry',
+      await stat(join(dir, 'trash', 'sessions', entry.entryId, 'data', 'session.v4.jsonl.zstd')).then(() => true, () => false))
+    const listed = JSON.parse((await call(instance.route, 'GET', '/trash')).body)
+    equal('trash listing returns the entry', listed.entries.map((item) => item.sessionId), [sid])
+    instance.dispose()
+  }
+
+  // U. A running session is refused.
+  {
+    const dir = await caseDir('case-trash-running')
+    process.env.DSH_HOME = dir
+    const sid = 'sess-running'
+    const made = await makeSession(dir, sid)
+    const services = makeSessionServices([{ sessionId: sid, running: true, cwd: '/Users/adam/demo' }])
+    const instance = mount({ registry: makeWorkspaceRegistry([]), ...services })
+    const response = await call(instance.route, 'POST', '/trash/move', { sessionId: sid })
+    check('a running session answers 409', response.statusCode === 409, String(response.statusCode))
+    equal('a running session is reported', JSON.parse(response.body).error, 'session-running')
+    check('a running session keeps its files', await stat(made.dir).then(() => true, () => false))
+    instance.dispose()
+  }
+
+  // V. Unlocatable session files fail closed.
+  {
+    const dir = await caseDir('case-trash-missing')
+    process.env.DSH_HOME = dir
+    const services = makeSessionServices([{ sessionId: 'sess-ghost', cwd: '/Users/adam/demo' }])
+    const instance = mount({ registry: makeWorkspaceRegistry([]), ...services })
+    const response = await call(instance.route, 'POST', '/trash/move', { sessionId: 'sess-ghost' })
+    check('an unlocatable session answers 500', response.statusCode === 500, String(response.statusCode))
+    equal('an unlocatable session reports the reason', JSON.parse(response.body).error, 'session-file-not-found')
+    instance.dispose()
+  }
+
+  // W. Cascading children, then restoring the parent restores them too.
+  {
+    const dir = await caseDir('case-trash-children')
+    process.env.DSH_HOME = dir
+    const parent = 'sess-parent'
+    const childA = 'sess-child-a'
+    const parentDir = await makeSession(dir, parent)
+    const childDir = await makeSession(dir, childA)
+    const rows = [
+      { sessionId: parent, title: 'Parent', cwd: '/Users/adam/demo' },
+      { sessionId: childA, title: 'Child', parentSessionId: parent, cwd: '/Users/adam/demo' },
+    ]
+    const services = makeSessionServices(rows)
+    const reg = makeWorkspaceRegistry([{ id: 'ws-1', title: 'Demo', path: '/Users/adam/demo', sessionIds: [parent, childA] }])
+    const instance = mount({ registry: reg, ...services })
+    const moved = JSON.parse((await call(instance.route, 'POST', '/trash/move', { sessionId: parent, includeChildren: true })).body)
+    check('cascade move answers ok', moved.ok === true, JSON.stringify(moved))
+    equal('the parent manifest records the child entry', moved.entry.children.length, 1)
+    check('the child left the sessions tree', await stat(childDir.dir).then(() => false, () => true))
+    const listed = JSON.parse((await call(instance.route, 'GET', '/trash')).body)
+    equal('the trash lists the parent and the child', listed.entries.length, 2)
+    const restored = JSON.parse((await call(instance.route, 'POST', '/trash/restore', { entryIds: [moved.entry.entryId] })).body)
+    check('restoring the parent answers ok', restored.ok === true, JSON.stringify(restored))
+    equal('restoring the parent also restored the child', restored.restored.length, 2)
+    check('the parent is back on disk', await stat(parentDir.dir).then(() => true, () => false))
+    check('the child is back on disk', await stat(childDir.dir).then(() => true, () => false))
+    equal('restore re-attached both sessions', reg.calls.attached.slice().sort(), [childA, parent].sort())
+    const after = JSON.parse((await call(instance.route, 'GET', '/trash')).body)
+    equal('the trash is empty after restoring', after.entries.length, 0)
+    instance.dispose()
+  }
+
+  // X. Orphan mode leaves children on disk; purge removes the entry.
+  {
+    const dir = await caseDir('case-trash-orphan')
+    process.env.DSH_HOME = dir
+    const parent = 'sess-orphan'
+    const child = 'sess-orphan-child'
+    await makeSession(dir, parent)
+    const childDir = await makeSession(dir, child)
+    const rows = [
+      { sessionId: parent, cwd: '/Users/adam/demo' },
+      { sessionId: child, parentSessionId: parent, cwd: '/Users/adam/demo' },
+    ]
+    const instance = mount({ registry: makeWorkspaceRegistry([]), ...makeSessionServices(rows) })
+    const moved = JSON.parse((await call(instance.route, 'POST', '/trash/move', { sessionId: parent, includeChildren: false })).body)
+    equal('orphan mode records the orphaned child', moved.entry.orphanedChildren.map((item) => item.sessionId), [child])
+    check('the orphaned child stays on disk', await stat(childDir.dir).then(() => true, () => false))
+    const purged = JSON.parse((await call(instance.route, 'POST', '/trash/purge', { entryIds: [moved.entry.entryId] })).body)
+    check('purge answers ok', purged.ok === true, JSON.stringify(purged))
+    equal('the trash is empty after purging', JSON.parse((await call(instance.route, 'GET', '/trash')).body).entries.length, 0)
+    instance.dispose()
+  }
+
+  // Y. Empty clears every entry and never touches sessions/.
+  {
+    const dir = await caseDir('case-trash-empty')
+    process.env.DSH_HOME = dir
+    const keep = 'sess-keep'
+    const keepDir = await makeSession(dir, keep)
+    const one = 'sess-empty-a'
+    await makeSession(dir, one)
+    const instance = mount({ registry: makeWorkspaceRegistry([]), ...makeSessionServices([{ sessionId: one, cwd: '/Users/adam/demo' }]) })
+    await call(instance.route, 'POST', '/trash/move', { sessionId: one })
+    const emptied = JSON.parse((await call(instance.route, 'POST', '/trash/empty', {})).body)
+    equal('empty reports one removed entry', emptied.removed, 1)
+    equal('the trash is empty after emptying', JSON.parse((await call(instance.route, 'GET', '/trash')).body).entries.length, 0)
+    check('an untouched session is still on disk', await stat(keepDir.dir).then(() => true, () => false))
     instance.dispose()
   }
 } finally {

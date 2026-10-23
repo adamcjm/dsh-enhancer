@@ -8,20 +8,22 @@
 一个 [DeepSeek Harness](https://github.com/omdsh-dev/dsh) 插件：补上自带工作区菜单里缺的几个日常操作。
 包名按**功能领域**而不是单个功能命名，所以以后继续加菜单增强不需要再改名。
 
-目前提供三项：
+目前提供四项：
 
 | 位置 | 入口 | 作用 |
 | --- | --- | --- |
 | 工作区行 →「…」菜单 | **打开文件夹** | 用 Finder / 资源管理器 / 系统文件管理器打开该工作区所在目录 |
 | 工作区行 →「…」菜单 | **隐藏工作区** / **取消隐藏工作区** | 从侧边栏隐藏该工作区及它名下的全部会话 |
 | 侧栏 → 视图选项 | **显示隐藏工作区 (N)** | 重新显示隐藏的工作区，便于逐个恢复 |
+| 会话行 →「…」菜单 | **移到回收站** | 把会话文件移到 `$DSH_HOME/trash`，可在「设置 → 插件 → 回收站」恢复 |
 
-设计上只做显示过滤与本地打开：
+设计上只做显示过滤、本地打开和可恢复的移动：
 
-- 不归档、不取消归档、不重命名、不移动、不置顶、不删除；
+- 除用户主动操作外，不产生归档、取消归档、重命名、移动、置顶的副作用；
 - 不改工作区记录、会话日志或归档集合；
 - 「打开文件夹」是只读操作：只调用系统文件管理器，不改任何数据；
-- 唯一写入的状态是一个很小的 Host 文件（`$DSH_HOME/storages/dsh-enhancer.json`）。
+- 「移到回收站」不删除文件：目录被重命名进 `$DSH_HOME/trash/sessions/`，可恢复；
+- 唯一持久化的非回收站状态是一个很小的 Host 文件（`$DSH_HOME/storages/dsh-enhancer.json`）。
 
 ## 安装
 
@@ -98,6 +100,31 @@ dsh plugin --profile <profile> add @adamcjm/dsh-enhancer
 之后通过 SSE（`/dsh-enhancer/stream`）接收每次变更，因此 Desktop 和 `dsh web`（两个共享同一
 `$DSH_HOME` 的 Host 进程）无需刷新即可同步。变更以增量发送，两个客户端隐藏不同工作区不会互相覆盖。
 
+### 把会话移到回收站
+
+**会话行 →「…」菜单 → 移到回收站。**
+
+- **运行中的会话会被拒绝**：对话框只显示「正在运行，无法删除」和关闭按钮，先停止会话再删。
+- **有子会话时**会问你怎么处理：
+  - **只删当前会话** —— 父会话进回收站，子会话留在原地变成孤儿（`parentSession` 指向一个不存在的会话）；
+  - **连同 N 个子会话** —— 父子一起进回收站，恢复父会话时会一并恢复它们。
+- **找不到会话文件时直接报错，什么都不动** —— 宁可失败也不猜路径。
+
+文件被移到 `$DSH_HOME/trash/sessions/<时间戳>_<sessionId>/data/`，旁边是记录标题、工作区、cwd、
+原始相对路径、大小和同批子会话条目的 `manifest.json`。
+
+**恢复入口：设置 → 插件 → 回收站。** 列表显示每个已删会话的标题、所属工作区、删除时长、大小和
+子会话数。勾选条目后：
+
+| 按钮 | 作用范围 | 确认 |
+| --- | --- | --- |
+| **恢复 (N)** | 仅勾选的条目 | 不需要 |
+| **永久删除 (N)** | 仅勾选的条目 | 需要（「无法恢复」） |
+| **清空回收站 (N)** | 整个回收站，忽略勾选 | 需要（「清空全部」） |
+
+恢复父会话时会一并恢复同批的子会话条目。会话恢复到原工作区（工作区还在的话），否则按 cwd 重新归组。
+「清空回收站」只删 `$DSH_HOME/trash/sessions/*`，**永远不碰 DSH 自己的 `sessions/`**。
+
 ## 实现原理
 
 - **隐藏**不碰 DOM：插件包装 `workspaces.list` 客户端模型（`getSnapshot`/`subscribe`），投影出过滤后的
@@ -105,8 +132,14 @@ dsh plugin --profile <profile> add @adamcjm/dsh-enhancer
   *仅视图层* 的归档集合，避免自带分组把它们甩进 "Ungrouped" —— 归档集合本身不会被写入。
 - **菜单项**是 DOM 追加。DSH 0.2.1-rc 里工作区行菜单和视图选项菜单都是硬编码数组、没有 slot，
   所以插件克隆自带菜单项的 class 追加条目，并用 `MutationObserver` 在菜单打开后找到 portal。
+  会话菜单项和回收站 tab 则是**正规 slot**（`sidebar.workspaces.session.menu.item`、
+  `settings.plugins.tab`、`shell.overlay`），不是 DOM 注入。
 - **Host 半侧**负责持久化状态和 `open-workspace` 动作。打开是 detach 的 `spawn`，
   `stdio: 'ignore'`，所以 HTTP 请求在启动器出现后立刻返回。
+- **回收站**不直接改 DSH 存储：先用公开的 registry API 清掉持久引用
+  （`detachSession`、`unarchiveSession`、`unpinSession`），再把会话目录 rename 进回收站并写 manifest。
+  会话靠 `$DSH_HOME/sessions/<group>/` 下名为 `<sessionId>` 的条目定位，所以 DSH 路径编码变化或改成
+  单文件布局时只会**失败关闭**，不会删错东西。
 
 ## 从 `@adamcjm/dsh-workspace-visibility` 升级
 

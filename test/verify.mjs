@@ -20,6 +20,12 @@ const PACKAGE_NAME = '@adamcjm/dsh-enhancer'
 const STATE_URL = '/dsh-enhancer/state'
 const MUTATE_URL = '/dsh-enhancer/mutate'
 const OPEN_URL = '/dsh-enhancer/open-workspace'
+const TRASH_URL = '/dsh-enhancer/trash'
+const TRASH_INSPECT_URL = TRASH_URL + '/inspect'
+const TRASH_MOVE_URL = TRASH_URL + '/move'
+const TRASH_RESTORE_URL = TRASH_URL + '/restore'
+const TRASH_PURGE_URL = TRASH_URL + '/purge'
+const TRASH_EMPTY_URL = TRASH_URL + '/empty'
 const STREAM_URL = '/dsh-enhancer/stream'
 const LEGACY_STORAGE_KEY = 'dsh-enhancer.state.v1'
 
@@ -238,6 +244,7 @@ function makeHost(options = {}) {
   }
   const calls = { state: 0, mutate: [], open: [] }
   const openResponse = options.openResponse ?? { status: 200, body: { ok: true } }
+  const trash = { calls: [], entries: [], inspector: null }
   const sources = []
   function broadcast() {
     for (const source of sources) {
@@ -271,6 +278,35 @@ function makeHost(options = {}) {
       const body = JSON.parse(init.body)
       return { ok: true, status: 200, json: async () => mutate(body) }
     }
+    if (url === TRASH_URL && method === 'GET') {
+      trash.calls.push('list')
+      return { ok: true, status: 200, json: async () => ({ ok: true, entries: trash.entries }) }
+    }
+    if (url === TRASH_INSPECT_URL && method === 'POST') {
+      const body = JSON.parse(init.body)
+      trash.calls.push('inspect:' + body.sessionId)
+      const inspector = trash.inspector ?? { exists: true, running: false, title: '', workspaceTitle: '', children: [] }
+      return { ok: true, status: 200, json: async () => Object.assign({ ok: true }, inspector) }
+    }
+    if (url === TRASH_MOVE_URL && method === 'POST') {
+      const body = JSON.parse(init.body)
+      trash.calls.push('move:' + body.sessionId + ':' + body.includeChildren)
+      return { ok: true, status: 200, json: async () => ({ ok: true, entry: { entryId: 'entry-' + body.sessionId, sessionId: body.sessionId } }) }
+    }
+    if (url === TRASH_RESTORE_URL && method === 'POST') {
+      const body = JSON.parse(init.body)
+      trash.calls.push('restore:' + body.entryIds.join(','))
+      return { ok: true, status: 200, json: async () => ({ ok: true, restored: [], failed: [] }) }
+    }
+    if (url === TRASH_PURGE_URL && method === 'POST') {
+      const body = JSON.parse(init.body)
+      trash.calls.push('purge:' + body.entryIds.join(','))
+      return { ok: true, status: 200, json: async () => ({ ok: true, purged: [], failed: [] }) }
+    }
+    if (url === TRASH_EMPTY_URL && method === 'POST') {
+      trash.calls.push('empty')
+      return { ok: true, status: 200, json: async () => ({ ok: true, removed: 1 }) }
+    }
     if (url === OPEN_URL && method === 'POST') {
       const body = JSON.parse(init.body)
       calls.open.push(body)
@@ -293,7 +329,7 @@ function makeHost(options = {}) {
     close() { this.closed = true }
   }
   FakeEventSource.instances = []
-  return { state, calls, fetchFn, FakeEventSource, sources }
+  return { state, calls, fetchFn, FakeEventSource, sources, trash }
 }
 
 function loadBundle(options = {}) {
@@ -361,7 +397,7 @@ function equal(name, actual, expected) {
 const loaded = loadBundle()
 equal('loader entry id is the package name', loaded.entry.id, PACKAGE_NAME)
 check('factory publishes apply', typeof loaded.exports.apply === 'function')
-equal('inject waits for locale/workspaces', loaded.exports.inject, ['locale', 'workspaces'])
+equal('inject waits for locale/workspaces/slots', loaded.exports.inject, ['locale', 'workspaces', 'slots'])
 const t = loaded.exports.__test
 check('test seam is exported', t !== undefined && typeof t.filterProjection === 'function'
   && typeof t.installSync === 'function' && typeof t.normalizeRemoteState === 'function')
@@ -541,8 +577,10 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   await sleep(40)
   check('apply registers the namespace dictionary', dictionaries.length === 1
     && dictionaries[0].ns === 'dsh-enhancer' && dictionaries[0].dict.zh && dictionaries[0].dict.en)
-  check('apply registers no sidebar slot components (footer button removed)', registrations.length === 0,
-    `registrations=${registrations.length}`)
+  check('apply registers the three trash slots', (() => {
+    const names = registrations.map((item) => item.options && item.options.name).sort()
+    return names.join(',') === 'settings.plugins.tab,shell.overlay,sidebar.workspaces.session.menu.item'
+  })(), JSON.stringify(registrations.map((item) => item.options && item.options.name)))
   check('Host state is projected onto the sidebar model', model.getSnapshot().items.length === 1
     && model.getSnapshot().items[0].workspaceId === 'w2')
   check('apply injects exactly one stylesheet', loadedApply.document.getElementById('dsh-enhancer/style') !== null)
@@ -619,6 +657,169 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   hideEntry.children[0].click()
   check('the hide entry toggles the hidden set', store.isHidden('w1') === true)
   dispose()
+}
+
+/* ------------------------------------------------------------------ *
+ * 9. Session trash: controller, dialog and panel                      *
+ * ------------------------------------------------------------------ */
+{
+  const DICT = {
+    'menu.trash': '移到回收站',
+    'dialog.trashTitle': '移到回收站',
+    'dialog.trashBody': '将「{name}」移到回收站？',
+    'dialog.trashConfirm': '移到回收站',
+    'dialog.trashOnlyParent': '只删当前会话',
+    'dialog.trashWithChildren': '连同 {n} 个子会话',
+    'dialog.childrenAsk': '这个会话有 {n} 个子会话。',
+    'dialog.running': '「{name}」正在运行，无法删除。',
+    'dialog.inspecting': '正在检查会话…',
+    'dialog.purgeTitle': '永久删除',
+    'dialog.purgeBody': '永久删除选中的 {n} 个会话？',
+    'dialog.purgeConfirm': '永久删除',
+    'dialog.emptyTitle': '清空回收站',
+    'dialog.emptyBody': '清空全部 {n} 项？',
+    'dialog.emptyConfirm': '清空',
+    'common.cancel': '取消',
+    'common.close': '关闭',
+    'common.untitled': '未命名会话',
+    'common.noWorkspace': '无工作区',
+    'trash.title': '回收站',
+    'trash.hint': '删除的会话先放在这里，可随时恢复。',
+    'trash.empty': '回收站是空的。',
+    'trash.predict': 'x',
+    'trash.loading': '正在加载…',
+    'trash.refresh': '刷新',
+    'trash.selectAll': '全选',
+    'trash.restore': '恢复',
+    'trash.purge': '永久删除',
+    'trash.emptyTrash': '清空回收站 ({n})',
+    'trash.restoreCount': '恢复 ({n})',
+    'trash.purgeCount': '永久删除 ({n})',
+    'trash.workspace': '工作区：{name}',
+    'trash.childrenCount': '含 {n} 个子会话',
+    'time.justNow': '刚刚',
+    'time.minutesAgo': '{n} 分钟前',
+    'time.hoursAgo': '{n} 小时前',
+    'time.daysAgo': '{n} 天前',
+  }
+  const translate = (key, vars) => {
+    const value = DICT[key] ?? key
+    if (vars === undefined) return value
+    return value.replace(/\{(\w+)\}/g, (match, name) => (vars[name] === undefined ? match : String(vars[name])))
+  }
+  const host = makeHost()
+  const bridge = loadBundle({ host })
+  const test = bridge.exports.__test
+  const store = test.createTrashStore()
+  const ui = test.createTrashController(store, () => translate)
+
+  check('the trash store starts empty', store.getSnapshot().entries.length === 0
+    && store.getSnapshot().dialog === null)
+
+  ui.beginDelete('sess-1', 'hello')
+  check('beginDelete opens a loading dialog', store.getSnapshot().dialog !== null
+    && store.getSnapshot().dialog.loading === true)
+  await sleep(20)
+  const inspected = store.getSnapshot().dialog
+  equal('the inspect answer is applied', inspected.inspect !== null && inspected.inspect.running, false)
+  equal('inspect was requested once', host.trash.calls.filter((call) => call.startsWith('inspect:')), ['inspect:sess-1'])
+
+  host.trash.inspector = { exists: true, running: true, title: 'busy', workspaceTitle: 'W', children: [] }
+  ui.beginDelete('sess-busy', 'busy')
+  await sleep(20)
+  const runningTree = test.TrashDialog({ ui: ui, t: translate })
+  check('a running session renders the blocked copy',
+    JSON.stringify(runningTree).includes('正在运行，无法删除'),
+    JSON.stringify(runningTree).slice(0, 120))
+
+  host.trash.inspector = { exists: true, running: false, title: 'hello', workspaceTitle: 'W', children: [] }
+  ui.beginDelete('sess-1', 'hello')
+  await sleep(20)
+  const confirmTree = test.TrashDialog({ ui: ui, t: translate })
+  check('a deletable session renders the confirmation buttons',
+    JSON.stringify(confirmTree).includes('移到回收站'))
+  ui.confirmDelete(false)
+  await sleep(20)
+  check('confirmDelete closes the dialog', store.getSnapshot().dialog === null)
+  equal('confirmDelete sent the move request',
+    host.trash.calls.filter((call) => call.startsWith('move:')), ['move:sess-1:false'])
+
+  host.trash.inspector = { exists: true, running: false, title: 'parent', workspaceTitle: 'W', children: [{ sessionId: 'c1', title: 'child' }] }
+  ui.beginDelete('sess-parent', 'parent')
+  await sleep(20)
+  const cascadeTree = test.TrashDialog({ ui: ui, t: translate })
+  check('a session with children offers both choices',
+    JSON.stringify(cascadeTree).includes('只删当前会话')
+      && JSON.stringify(cascadeTree).includes('连同 1 个子会话'))
+  ui.confirmDelete(true)
+  await sleep(20)
+  equal('the cascade choice is forwarded',
+    host.trash.calls.filter((call) => call.startsWith('move:sess-parent')), ['move:sess-parent:true'])
+
+  host.trash.entries = [
+    { entryId: 'e1', sessionId: 's1', title: 'Alpha', workspaceTitle: 'W', deletedAt: new Date().toISOString(), sizeBytes: 2048 },
+    { entryId: 'e2', sessionId: 's2', title: 'Child', parentEntryId: 'e1' },
+  ]
+  ui.loadTrash()
+  await sleep(20)
+  equal('loadTrash stores every entry', store.getSnapshot().entries.length, 2)
+  const panelTree = test.TrashPanel({ ui: ui, t: translate })
+  const panelJson = JSON.stringify(panelTree)
+  check('the panel renders the root entry', panelJson.includes('Alpha'))
+  check('the panel does not list a cascaded child as a root row', !panelJson.includes('"Child"'))
+
+  ui.toggleSelect('e1')
+  equal('toggleSelect selects one entry', store.getSnapshot().selected, ['e1'])
+  ui.toggleSelect('e1')
+  equal('toggleSelect deselects it again', store.getSnapshot().selected, [])
+  ui.selectAll(['e1'])
+  equal('selectAll selects every root', store.getSnapshot().selected, ['e1'])
+
+  ui.restoreSelected()
+  await sleep(20)
+  equal('restore sends the selected entry ids',
+    host.trash.calls.filter((call) => call.startsWith('restore:')), ['restore:e1'])
+  equal('restore clears the selection', store.getSnapshot().selected, [])
+
+  ui.toggleSelect('e1')
+  ui.askPurge()
+  check('askPurge opens the purge dialog', store.getSnapshot().dialog !== null
+    && store.getSnapshot().dialog.type === 'purge')
+  ui.confirmPurge()
+  await sleep(20)
+  equal('purge sends the selected entry ids',
+    host.trash.calls.filter((call) => call.startsWith('purge:')), ['purge:e1'])
+  check('purge closes the dialog', store.getSnapshot().dialog === null)
+
+  ui.askEmpty()
+  check('askEmpty opens the empty dialog', store.getSnapshot().dialog !== null
+    && store.getSnapshot().dialog.type === 'empty')
+  ui.confirmEmpty()
+  await sleep(20)
+  check('empty was requested', host.trash.calls.includes('empty'))
+
+  let menuClosed = false
+  const menuItem = test.TrashMenuItem({
+    sessionId: 'sess-1',
+    displayTitle: 'hello',
+    ui: ui,
+    t: translate,
+    closeMenu: () => { menuClosed = true },
+  })
+  check('the menu item renders a menuitem button', menuItem.type === 'button' && menuItem.props.role === 'menuitem')
+  check('the menu item carries the localized label', JSON.stringify(menuItem).includes('移到回收站'))
+  menuItem.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} })
+  await sleep(20)
+  check('clicking the menu item asks the Host to inspect', host.trash.calls.includes('inspect:sess-1'))
+  check('clicking the menu item closes the menu', menuClosed === true)
+  ui.closeDialog()
+
+  equal('formatBytes renders bytes', test.formatBytes(512), '512 B')
+  equal('formatBytes renders kilobytes', test.formatBytes(2048), '2.0 KB')
+  equal('formatBytes renders megabytes', test.formatBytes(3 * 1024 * 1024), '3.0 MB')
+  equal('relativeTimeText renders just now', test.relativeTimeText(translate, new Date().toISOString()), '刚刚')
+  equal('relativeTimeText renders minutes',
+    test.relativeTimeText(translate, new Date(Date.now() - 5 * 60 * 1000).toISOString()), '5 分钟前')
 }
 
 /* ------------------------------------------------------------------ *
