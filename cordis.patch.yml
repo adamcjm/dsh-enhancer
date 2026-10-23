@@ -1,0 +1,14 @@
+# @adamcjm/dsh-enhancer — bundle patch
+#
+# 只插入一行插件。真正的功能全部在浏览器半侧（lib/client.js）：
+#   - 过滤侧边栏的工作区投影（隐藏指定工作区，连同其会话）；
+#   - 向工作区行自带的「…」菜单追加「打开文件夹」「隐藏工作区 / 取消隐藏」；
+#   - 向「视图选项」菜单追加「显示隐藏工作区」开关。
+# host 半侧负责：
+#   - 持久化隐藏状态（$DSH_HOME/storages/dsh-enhancer.json，并从旧包
+#     `@adamcjm/dsh-workspace-visibility` 的 workspace-visibility.json 自动迁移）；
+#   - 用系统自带的文件管理器打开工作区目录（Finder / Explorer / xdg-open）。
+# host 不修改任何工作区、会话或归档数据。
+- insert:
+    - id: dsh-enhancer
+      name: '@adamcjm/dsh-enhancer'

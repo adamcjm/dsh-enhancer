@@ -1,0 +1,71 @@
+{
+  "name": "@adamcjm/dsh-enhancer",
+  "version": "1.0.0",
+  "description": "Quality-of-life enhancements for the DSH workspace sidebar: hide workspaces and their sessions, reveal them from the view options, and open any workspace folder in Finder, Explorer or your file manager. Display-only: workspace, session and archive data are never modified.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "test",
+    "docs"
+  ],
+  "scripts": {
+    "test": "node test/verify.mjs && node test/host.mjs"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "deepseek",
+    "dsh",
+    "dsh-plugin",
+    "enhancer",
+    "enhancement",
+    "workspace",
+    "workspaces",
+    "sidebar",
+    "menu",
+    "workspace-menu",
+    "hide-workspace",
+    "open-folder",
+    "reveal-in-finder"
+  ],
+  "author": "adamcjm",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adamcjm/dsh-enhancer.git"
+  },
+  "homepage": "https://github.com/adamcjm/dsh-enhancer#readme",
+  "bugs": {
+    "url": "https://github.com/adamcjm/dsh-enhancer/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "manifestVersion": 1
+  }
+}

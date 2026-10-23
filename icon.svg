@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DSH Enhancer">
+  <defs>
+    <linearGradient id="enh-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#152238"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#enh-bg)"/>
+  <rect x="13" y="19.6" width="24" height="3.6" rx="1.8" fill="#7dd3fc"/>
+  <rect x="13" y="30.2" width="24" height="3.6" rx="1.8" fill="#7dd3fc"/>
+  <rect x="13" y="40.8" width="15" height="3.6" rx="1.8" fill="#7dd3fc"/>
+  <rect x="40.5" y="33.6" width="13.5" height="3.6" rx="1.8" fill="#f59e0b"/>
+  <rect x="45.45" y="28.65" width="3.6" height="13.5" rx="1.8" fill="#f59e0b"/>
+</svg>
