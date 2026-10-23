@@ -10,6 +10,16 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-10-23
+
+### Fixed
+
+- Restoring a session now **verifies the result instead of assuming it**. After the
+  `refreshList()` re-pull, the plugin checks the client snapshot for the restored session ids
+  and reloads the page once when they are still missing. `refreshList` is single-flight, so it
+  can answer with a generation fetched before the trash-list refresh settled, leaving a restored
+  session invisible until the next manual reload.
+
 ## [1.2.2] — 2026-10-23
 
 ### Fixed

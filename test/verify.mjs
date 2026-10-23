@@ -296,7 +296,15 @@ function makeHost(options = {}) {
     if (url === TRASH_RESTORE_URL && method === 'POST') {
       const body = JSON.parse(init.body)
       trash.calls.push('restore:' + body.entryIds.join(','))
-      return { ok: true, status: 200, json: async () => ({ ok: true, restored: [], failed: [] }) }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          restored: body.entryIds.map((id) => ({ entryId: id, sessionId: 's-' + id })),
+          failed: [],
+        }),
+      }
     }
     if (url === TRASH_PURGE_URL && method === 'POST') {
       const body = JSON.parse(init.body)
@@ -721,8 +729,10 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   const test = bridge.exports.__test
   const store = test.createTrashStore()
   const sessionRefreshes = { count: 0 }
+  const restoredChecks = []
   const ui = test.createTrashController(store, () => translate, {
     refreshSessions: () => { sessionRefreshes.count += 1 },
+    ensureSessions: (ids) => { restoredChecks.push(ids.slice()) },
   })
 
   check('the trash store starts empty', store.getSnapshot().entries.length === 0
@@ -794,6 +804,7 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
     host.trash.calls.filter((call) => call.startsWith('restore:')), ['restore:e1'])
   equal('restore clears the selection', store.getSnapshot().selected, [])
   equal('restore asks the sessions model to re-pull', sessionRefreshes.count, refreshesBeforeRestore + 1)
+  equal('restore asks for a post-restore verification', restoredChecks, [['s-e1']])
 
   ui.toggleSelect('e1')
   ui.askPurge()
