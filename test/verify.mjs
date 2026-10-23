@@ -586,9 +586,9 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   await sleep(40)
   check('apply registers the namespace dictionary', dictionaries.length === 1
     && dictionaries[0].ns === 'dsh-enhancer' && dictionaries[0].dict.zh && dictionaries[0].dict.en)
-  check('apply registers the three trash slots', (() => {
+  check('apply registers the five trash slots', (() => {
     const names = registrations.map((item) => item.options && item.options.name).sort()
-    return names.join(',') === 'settings.plugins.tab,shell.overlay,sidebar.workspaces.session.menu.item'
+    return names.join(',') === 'settings.plugins.tab,shell.overlay,shell.overlay,sidebar.footer.action,sidebar.workspaces.session.menu.item'
   })(), JSON.stringify(registrations.map((item) => item.options && item.options.name)))
   check('Host state is projected onto the sidebar model', model.getSnapshot().items.length === 1
     && model.getSnapshot().items[0].workspaceId === 'w2')
@@ -822,6 +822,23 @@ equal('unknown menu text is ignored', t.menuKindFromText('Copy Session ID'), nul
   check('clicking the menu item asks the Host to inspect', host.trash.calls.includes('inspect:sess-1'))
   check('clicking the menu item closes the menu', menuClosed === true)
   ui.closeDialog()
+
+  // Sidebar foot entry + floating panel.
+  ui.togglePanel()
+  check('togglePanel opens the trash panel', store.getSnapshot().panelOpen === true)
+  await sleep(20)
+  const panelOverlay = test.TrashPanelOverlay({ ui: ui, t: translate })
+  check('the panel overlay renders the modal shell',
+    JSON.stringify(panelOverlay).includes('dsh-enh-trash-modal'))
+  const panelBody = test.TrashPanel({ ui: ui, t: translate })
+  check('the trash panel renders the root entry', JSON.stringify(panelBody).includes('Alpha'))
+  const footerButton = test.TrashSidebarButton({ ui: ui, t: translate })
+  check('the footer entry renders a pressed button', footerButton.type === 'button'
+    && footerButton.props['aria-pressed'] === 'true'
+    && footerButton.props.className === 'dsh-enh-footer-button')
+  ui.togglePanel()
+  check('togglePanel closes the trash panel', store.getSnapshot().panelOpen === false)
+  check('the closed panel renders nothing', test.TrashPanelOverlay({ ui: ui, t: translate }) === null)
 
   equal('formatBytes renders bytes', test.formatBytes(512), '512 B')
   equal('formatBytes renders kilobytes', test.formatBytes(2048), '2.0 KB')

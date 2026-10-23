@@ -10,6 +10,17 @@ menu enhancements without changing the package name again.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-23
+
+### Added
+
+- **Trash entry in the sidebar foot**: one icon button beside Settings opens a floating trash
+  panel, so deleted sessions and their restore/purge actions are reachable without going into
+  Settings. The button carries a badge with the number of deleted sessions and stays pressed
+  while the panel is open; the panel closes on backdrop click or the × button.
+- The panel reuses the same list body as the Settings tab (multi-select, Restore (N), Delete
+  permanently (N), Empty trash (N)), so the two surfaces can never drift apart.
+
 ## [1.1.5] — 2026-10-23
 
 ### Fixed
